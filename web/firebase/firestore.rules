@@ -1,0 +1,69 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function validUserProfile(data, userId) {
+      return data.id == userId
+        && data.displayName is string
+        && data.displayName.size() >= 2
+        && data.displayName.size() <= 30
+        && data.avatar is string
+        && data.avatar.size() >= 1
+        && data.avatar.size() <= 4
+        && data.color is string
+        && data.color.matches('^#[A-Fa-f0-9]{6}$');
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isOwner(userId)
+        && validUserProfile(request.resource.data, userId);
+      allow update: if isOwner(userId)
+        && validUserProfile(request.resource.data, userId);
+      allow delete: if isOwner(userId);
+    }
+
+    match /friendships/{friendshipId} {
+      allow read: if isSignedIn() && resource.data.users.hasAny([request.auth.uid]);
+      allow create: if isSignedIn()
+        && request.resource.data.users is list
+        && request.resource.data.users.size() == 2
+        && request.resource.data.users.hasAny([request.auth.uid]);
+      allow update, delete: if isSignedIn()
+        && resource.data.users is list
+        && resource.data.users.hasAny([request.auth.uid]);
+    }
+
+    match /invites/{inviteCode} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.code == inviteCode
+        && request.resource.data.status == 'active'
+        && request.resource.data.expiresAtMs is number
+        && request.resource.data.expiresAtMs > 0;
+      allow update, delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /sessions/{sessionId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 2
+        && request.resource.data.name.size() <= 60;
+      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

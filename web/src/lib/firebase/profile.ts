@@ -15,6 +15,12 @@ type FirestoreUserProfile = UserProfile & {
 const profileCache = new Map<string, { profile: UserProfile; expiresAt: number }>();
 const PROFILE_CACHE_TTL_MS = 60_000;
 
+function omitUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, value]) => value !== undefined),
+  ) as Partial<T>;
+}
+
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
   const cached = profileCache.get(uid);
   if (cached && cached.expiresAt > Date.now()) {
@@ -77,17 +83,22 @@ export async function upsertUserProfile(
     displayName,
     avatar,
     color,
-    email: authUser.email ?? undefined,
-    photoURL: authUser.photoURL ?? undefined,
+    ...(authUser.email ? { email: authUser.email } : {}),
+    ...(authUser.photoURL ? { photoURL: authUser.photoURL } : {}),
     updatedAt: serverTimestamp(),
   };
 
-  await setDoc(
-    doc(firebaseStore(), "users", authUser.uid),
-    {
+  // ADD this
+  const firestoreData = Object.fromEntries(
+    Object.entries({
       ...userProfile,
       createdAt: serverTimestamp(),
-    },
+    }).filter(([, value]) => value !== undefined)
+  );
+
+  await setDoc(
+    doc(firebaseStore(), "users", authUser.uid),
+    firestoreData,
     { merge: true },
   );
 
